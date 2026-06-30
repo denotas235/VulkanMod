@@ -44,7 +44,10 @@ public class Vulkan {
         public static final boolean ENABLE_VALIDATION_LAYERS = false;
 //    public static final boolean ENABLE_VALIDATION_LAYERS = true;
 
-    public static final boolean DYNAMIC_RENDERING = true;
+    // VulkanMod para Android/Mali-G52 - Vulkan 1.1 apenas
+// VK_KHR_dynamic_rendering é Vulkan 1.2+ e não disponível no Mali-G52
+// Usamos render passes tradicionais (Vulkan 1.1) em vez de dynamic rendering
+    public static boolean DYNAMIC_RENDERING = false; // DESATIVADO para Vulkan 1.1
 
     public static final Set<String> VALIDATION_LAYERS;
 
@@ -63,14 +66,15 @@ public class Vulkan {
     public static final Set<String> REQUIRED_EXTENSION = getRequiredExtensionSet();
 
     private static Set<String> getRequiredExtensionSet() {
-        ArrayList<String> extensions = new ArrayList<>(List.of(VK_KHR_SWAPCHAIN_EXTENSION_NAME));
-
-        if (DYNAMIC_RENDERING) {
-            extensions.add(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);
-        }
-
-        return new HashSet<>(extensions);
+        // Vulkan 1.1 apenas - sem VK_KHR_dynamic_rendering
+        // Extensões obrigatórias para Vulkan 1.1:
+        // - VK_KHR_swapchain: já disponível no Mali-G52
+        // VK_KHR_dynamic_rendering NÃO é incluído (é Vulkan 1.2+)
+        return new HashSet<>(List.of(VK_KHR_SWAPCHAIN_EXTENSION_NAME));
     }
+    
+    // Método removido - não precisamos atualizar extensões dinamicamente
+    // public static void updateRequiredExtensions() { ... } foi removido
 
     private static int debugCallback(int messageSeverity, int messageType, long pCallbackData, long pUserData) {
 
