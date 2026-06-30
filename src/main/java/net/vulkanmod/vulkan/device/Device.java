@@ -29,7 +29,7 @@ public class Device {
     public final String vkVersion;
 
     public final VkPhysicalDeviceFeatures2 availableFeatures;
-    public final VkPhysicalDeviceVulkan11Features availableFeatures11;
+    public final VkPhysicalDeviceShaderDrawParametersFeatures availableFeatures11;
 
 //    public final VkPhysicalDeviceVulkan13Features availableFeatures13;
 //    public final boolean vulkan13Support;
@@ -51,7 +51,7 @@ public class Device {
         this.availableFeatures = VkPhysicalDeviceFeatures2.calloc();
         this.availableFeatures.sType$Default();
 
-        this.availableFeatures11 = VkPhysicalDeviceVulkan11Features.malloc();
+        this.availableFeatures11 = VkPhysicalDeviceShaderDrawParametersFeatures.malloc();
         this.availableFeatures11.sType$Default();
         this.availableFeatures.pNext(this.availableFeatures11);
 
@@ -120,8 +120,8 @@ public class Device {
             var a = stack.mallocInt(1);
             vkEnumerateInstanceVersion(a);
             int vkVer1 = a.get(0);
-            if (VK_VERSION_MINOR(vkVer1) < 2) {
-                throw new RuntimeException("Vulkan 1.2 not supported: Only Has: %s".formatted(decDefVersion(vkVer1)));
+            if (VK_VERSION_MINOR(vkVer1) < 1) {
+                throw new RuntimeException("Vulkan 1.1 not supported: Only Has: %s".formatted(decDefVersion(vkVer1)));
             }
             return vkVer1;
         }
