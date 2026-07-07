@@ -310,6 +310,14 @@ public class RenderSection {
         this.chunkArea = chunkArea;
 
         this.frustumIndex = chunkArea.getFrustumIndex(xOffset, yOffset, zOffset);
+
+        if (chunkArea != null && chunkArea.getDrawBuffers() != null) {
+            chunkArea.getDrawBuffers().setSectionAABB(
+                this.inAreaIndex,
+                this.xOffset, this.yOffset, this.zOffset,
+                this.xOffset + 16.0f, this.yOffset + 16.0f, this.zOffset + 16.0f
+            );
+        }
     }
 
     public ChunkArea getChunkArea() {

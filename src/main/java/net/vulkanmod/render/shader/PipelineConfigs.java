@@ -56,4 +56,24 @@ public class PipelineConfigs {
                                                                        .addImageDescriptor(4, "sampler2D", "LightTexture", 2)
                                                                        .build();
 
+    public static final PipelineConfig.UB CULLING_PC = PipelineConfig.UB.builder(0, org.lwjgl.vulkan.VK10.VK_SHADER_STAGE_COMPUTE_BIT)
+                                                    .addUniform("vec2", "aabbPtr")
+                                                    .addUniform("vec2", "meshInfoPtr")
+                                                    .addUniform("vec2", "indirectPtr")
+                                                    .addUniform("vec2", "countPtr")
+                                                    .addUniform("int", "totalChunks")
+                                                    .addUniform("vec3", "padding")
+                                                    .addUniform("vec4", "plane0")
+                                                    .addUniform("vec4", "plane1")
+                                                    .addUniform("vec4", "plane2")
+                                                    .addUniform("vec4", "plane3")
+                                                    .addUniform("vec4", "plane4")
+                                                    .addUniform("vec4", "plane5")
+                                                    .build();
+
+    public static final PipelineConfig CULLING = PipelineConfig.builder()
+                                                        .withShader(SPIRVUtils.ShaderKind.COMPUTE_SHADER, "gpu_driven/culling")
+                                                        .setPushConstants(CULLING_PC)
+                                                        .build();
+
 }

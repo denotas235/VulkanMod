@@ -8,6 +8,7 @@ import net.vulkanmod.render.chunk.build.thread.ThreadBuilderPack;
 import net.vulkanmod.render.vertex.CustomVertexFormat;
 import net.vulkanmod.render.vertex.TerrainRenderType;
 import net.vulkanmod.vulkan.shader.GraphicsPipeline;
+import net.vulkanmod.vulkan.shader.ComputePipeline;
 import net.vulkanmod.vulkan.shader.Pipeline;
 import net.vulkanmod.vulkan.shader.PipelineConfig;
 import net.vulkanmod.vulkan.shader.SPIRVUtils;
@@ -20,6 +21,8 @@ public abstract class PipelineManager {
     static GraphicsPipeline
             terrainShader, terrainShaderEarlyZ,
             fastBlitPipeline, cloudsPipeline;
+
+    public static ComputePipeline cullingPipeline;
 
     private static Function<TerrainRenderType, GraphicsPipeline> shaderGetter;
 
@@ -39,6 +42,20 @@ public abstract class PipelineManager {
         terrainShaderEarlyZ = createPipeline("terrain_earlyZ", "basic", CustomVertexFormat.COMPRESSED_TERRAIN);
         fastBlitPipeline = createPipeline("blit", "basic/blit", CustomVertexFormat.NONE);
         cloudsPipeline = createPipeline("clouds", "basic/clouds", DefaultVertexFormat.POSITION_COLOR);
+    }
+
+    public static void initCullingPipeline() {
+        if (cullingPipeline == null) {
+            cullingPipeline = createComputePipeline("culling", "gpu_driven", PipelineConfigs.CULLING);
+        }
+    }
+
+    private static ComputePipeline createComputePipeline(String configName, String shaderPath, PipelineConfig config) {
+        Pipeline.Builder pipelineBuilder = new Pipeline.Builder(configName);
+        final String path = ShaderLoadUtil.resolveShaderPath(shaderPath);
+        pipelineBuilder.applyConfig(config);
+        pipelineBuilder.setShaderSrc(SPIRVUtils.ShaderKind.COMPUTE_SHADER, ShaderLoadUtil.loadShader(path, "%s.comp".formatted(config.shaderPaths.get(SPIRVUtils.ShaderKind.COMPUTE_SHADER))));
+        return new ComputePipeline(pipelineBuilder);
     }
 
     private static GraphicsPipeline createPipeline(String configName, String shaderPath, PipelineConfig config, VertexFormat vertexFormat) {

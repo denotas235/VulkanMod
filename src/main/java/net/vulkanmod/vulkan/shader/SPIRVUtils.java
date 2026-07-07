@@ -20,6 +20,7 @@ import java.nio.file.Paths;
 import static org.lwjgl.system.MemoryUtil.NULL;
 import static org.lwjgl.system.MemoryUtil.memASCII;
 import static org.lwjgl.util.shaderc.Shaderc.*;
+import static org.lwjgl.vulkan.VK11.VK_API_VERSION_1_1;
 
 public class SPIRVUtils {
     private static final boolean DEBUG = true;
@@ -58,7 +59,7 @@ public class SPIRVUtils {
         if (DEBUG)
             shaderc_compile_options_set_generate_debug_info(options);
 
-        shaderc_compile_options_set_target_env(options, shaderc_env_version_vulkan_1_2, VK12.VK_API_VERSION_1_2);
+        shaderc_compile_options_set_target_env(options, shaderc_env_version_vulkan_1_1, VK_API_VERSION_1_1);
         shaderc_compile_options_set_include_callbacks(options, SHADER_INCLUDER, SHADER_RELEASER, pUserData);
 
         includePaths = new ObjectArrayList<>();

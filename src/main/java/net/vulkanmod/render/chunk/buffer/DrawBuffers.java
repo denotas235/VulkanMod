@@ -13,6 +13,7 @@ import net.vulkanmod.render.vertex.CustomVertexFormat;
 import net.vulkanmod.render.vertex.TerrainRenderType;
 import net.vulkanmod.vulkan.Renderer;
 import net.vulkanmod.vulkan.memory.MemoryTypes;
+import net.vulkanmod.vulkan.memory.buffer.Buffer;
 import net.vulkanmod.vulkan.memory.buffer.IndirectBuffer;
 import net.vulkanmod.vulkan.memory.buffer.UniformBuffer;
 import net.vulkanmod.vulkan.shader.Pipeline;
@@ -56,6 +57,10 @@ public class DrawBuffers {
     long latestBuildTime = 0;
     long lastFadeUpdate = -1;
 
+    public Buffer aabbBuffer;
+    public Buffer meshInfoBuffer;
+    public Buffer drawCountBuffer;
+
     // Need ugly minHeight parameter to fix custom world heights (exceeding 384 Blocks in total)
     public DrawBuffers(int index, Vector3i origin, int minHeight) {
         this.index = index;
@@ -63,6 +68,36 @@ public class DrawBuffers {
         this.minHeight = minHeight;
 
         this.drawParamsPtr = DrawParametersBuffer.allocateBuffer();
+
+        if (Initializer.CONFIG.indirectDraw) {
+            int usageFlags = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | org.lwjgl.vulkan.KHRBufferDeviceAddress.VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT_KHR;
+            
+            this.aabbBuffer = new Buffer("AABB Buffer", usageFlags, MemoryTypes.HOST_MEM);
+            this.aabbBuffer.createBuffer(ChunkAreaManager.AREA_SIZE * 32L); // 512 chunks * 32 bytes = 16KB
+            
+            this.meshInfoBuffer = new Buffer("Mesh Info Buffer", usageFlags, MemoryTypes.HOST_MEM);
+            this.meshInfoBuffer.createBuffer(ChunkAreaManager.AREA_SIZE * TerrainRenderType.VALUES.length * QuadFacing.COUNT * DrawParametersBuffer.STRIDE); // 172KB
+            
+            this.drawCountBuffer = new Buffer("Draw Count Buffer", 
+                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | org.lwjgl.vulkan.KHRBufferDeviceAddress.VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT_KHR, 
+                MemoryTypes.HOST_MEM);
+            this.drawCountBuffer.createBuffer(16L); // 16 bytes
+        }
+    }
+
+    public void setSectionAABB(int inAreaIndex, float minX, float minY, float minZ, float maxX, float maxY, float maxZ) {
+        if (this.aabbBuffer == null) return;
+        
+        long ptr = this.aabbBuffer.getDataPtr() + (inAreaIndex * 32L);
+        MemoryUtil.memPutFloat(ptr, minX);
+        MemoryUtil.memPutFloat(ptr + 4, minY);
+        MemoryUtil.memPutFloat(ptr + 8, minZ);
+        MemoryUtil.memPutFloat(ptr + 12, 1.0f);
+        
+        MemoryUtil.memPutFloat(ptr + 16, maxX);
+        MemoryUtil.memPutFloat(ptr + 20, maxY);
+        MemoryUtil.memPutFloat(ptr + 24, maxZ);
+        MemoryUtil.memPutFloat(ptr + 28, 1.0f);
     }
 
     public void upload(RenderSection section, UploadBuffer buffer, TerrainRenderType renderType) {
@@ -150,6 +185,12 @@ public class DrawBuffers {
             DrawParametersBuffer.setFirstIndex(paramPtr, firstIndex);
             DrawParametersBuffer.setVertexOffset(paramPtr, vertexOffset);
             DrawParametersBuffer.setBaseInstance(paramPtr, baseInstance);
+        }
+
+        if (this.meshInfoBuffer != null) {
+            long paramPtrStart = DrawParametersBuffer.getParamsPtr(this.drawParamsPtr, section.inAreaIndex, renderType.ordinal(), 0);
+            long relativeOffset = paramPtrStart - this.drawParamsPtr;
+            MemoryUtil.memCopy(paramPtrStart, this.meshInfoBuffer.getDataPtr() + relativeOffset, 112L);
         }
 
         updateUniformData(section);
@@ -529,6 +570,19 @@ public class DrawBuffers {
         this.releaseBuffers();
 
         DrawParametersBuffer.freeBuffer(this.drawParamsPtr);
+        
+        if (this.aabbBuffer != null) {
+            this.aabbBuffer.scheduleFree();
+            this.aabbBuffer = null;
+        }
+        if (this.meshInfoBuffer != null) {
+            this.meshInfoBuffer.scheduleFree();
+            this.meshInfoBuffer = null;
+        }
+        if (this.drawCountBuffer != null) {
+            this.drawCountBuffer.scheduleFree();
+            this.drawCountBuffer = null;
+        }
     }
 
     public boolean isAllocated() {

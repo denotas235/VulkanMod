@@ -81,6 +81,7 @@ public class Renderer {
     private long boundPipelineHandle;
 
     private Drawer drawer;
+    private long frameStartTimeNs;
 
     private SwapChain swapChain;
 
@@ -232,6 +233,7 @@ public class Renderer {
     }
 
     public void beginFrame() {
+        this.frameStartTimeNs = System.nanoTime();
         this.recursion++;
 
         if (swapChainUpdate && recursion <= 1) {
@@ -256,6 +258,7 @@ public class Renderer {
         submitUploads();
 
         MemoryManager.getInstance().initFrame(currentFrame);
+        Synchronization.INSTANCE.clearFrame(currentFrame);
         drawer.setCurrentFrame(currentFrame);
         Vulkan.getStagingBuffers().beginFrame(currentFrame);
 
@@ -319,6 +322,9 @@ public class Renderer {
         }
         this.recursion--;
 
+        long frameTimeNs = System.nanoTime() - this.frameStartTimeNs;
+        net.vulkanmod.render.profiling.PerformanceLogger.getInstance().countFrame(frameTimeNs);
+
         Profiler p = Profiler.getMainProfiler();
         p.push("End_rendering");
 
@@ -353,8 +359,13 @@ public class Renderer {
                 totalWaitSemaphores += 1;
             }
 
-            LongBuffer waitSemaphores = stack.mallocLong(totalWaitSemaphores);
-            IntBuffer waitDstStageMask = stack.mallocInt(totalWaitSemaphores);
+            // Timeline Semaphore Wait
+            boolean hasTimeline = Synchronization.INSTANCE.isTimelineSupported() && Synchronization.INSTANCE.hasTimelineWaits();
+            int timelineCount = hasTimeline ? 1 : 0;
+            int finalWaitCount = totalWaitSemaphores + timelineCount;
+
+            LongBuffer waitSemaphores = stack.mallocLong(finalWaitCount);
+            IntBuffer waitDstStageMask = stack.mallocInt(finalWaitCount);
 
             Synchronization.INSTANCE.getWaitSemaphores(waitSemaphores);
 
@@ -367,8 +378,30 @@ public class Renderer {
                 waitDstStageMask.put(totalWaitSemaphores - 1, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
             }
 
+            if (hasTimeline) {
+                long maxWaitValue = Synchronization.INSTANCE.getMaxWaitTimelineValue();
+                long timelineSemaphore = Synchronization.INSTANCE.getTimelineSemaphore();
+
+                waitSemaphores.put(finalWaitCount - 1, timelineSemaphore);
+                waitDstStageMask.put(finalWaitCount - 1, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+
+                LongBuffer waitValues = stack.mallocLong(finalWaitCount);
+                for (int i = 0; i < finalWaitCount - 1; i++) {
+                    waitValues.put(i, 0L);
+                }
+                waitValues.put(finalWaitCount - 1, maxWaitValue);
+
+                VkTimelineSemaphoreSubmitInfo timelineSubmitInfo = VkTimelineSemaphoreSubmitInfo.calloc(stack)
+                    .sType(org.lwjgl.vulkan.KHRTimelineSemaphore.VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO_KHR)
+                    .pWaitSemaphoreValues(waitValues);
+
+                submitInfo.pNext(timelineSubmitInfo.address());
+
+                Synchronization.INSTANCE.clearTimelineWaits();
+            }
+
             waitSemaphores.position(0);
-            waitSemaphores.limit(totalWaitSemaphores);
+            waitSemaphores.limit(finalWaitCount);
 
             submitInfo.pWaitSemaphores(waitSemaphores);
             submitInfo.waitSemaphoreCount(waitSemaphores.limit());

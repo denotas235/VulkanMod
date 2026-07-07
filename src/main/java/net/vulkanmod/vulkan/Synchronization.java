@@ -5,6 +5,7 @@ import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import net.vulkanmod.vulkan.memory.MemoryManager;
 import net.vulkanmod.vulkan.queue.CommandPool;
 import net.vulkanmod.vulkan.util.VUtil;
+import net.vulkanmod.vulkan.timeline.TimelineSemaphoreManager;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.vulkan.VkDevice;
@@ -29,8 +30,74 @@ public class Synchronization {
     private final LongArrayList semaphores = new LongArrayList();
     private final ObjectArrayList<CommandPool.CommandBuffer> semaphoreCbs = new ObjectArrayList<>();
 
+    // Timeline Semaphore Support
+    private TimelineSemaphoreManager timelineSemaphore;
+    private boolean timelineSupported = false;
+    private boolean initialized = false;
+    private long lastWaitValue = 0;
+    private final LongArrayList waitTimelineValues = new LongArrayList();
+    private ObjectArrayList<CommandPool.CommandBuffer>[] deferredResets;
+
     Synchronization(int allocSize) {
         this.fences = MemoryUtil.memAllocLong(allocSize);
+    }
+
+    public synchronized void init() {
+        if (initialized) return;
+        this.timelineSupported = Vulkan.getDevice().timelineSemaphoreSupported;
+        int frames = Renderer.getFramesNum();
+        this.deferredResets = new ObjectArrayList[frames];
+        for (int i = 0; i < frames; i++) {
+            this.deferredResets[i] = new ObjectArrayList<>();
+        }
+        if (this.timelineSupported) {
+            this.timelineSemaphore = new TimelineSemaphoreManager();
+        }
+        this.initialized = true;
+    }
+
+    public boolean isTimelineSupported() {
+        if (!initialized) init();
+        return this.timelineSupported;
+    }
+
+    public long getTimelineSemaphore() {
+        if (!initialized) init();
+        return this.timelineSemaphore != null ? this.timelineSemaphore.getSemaphore() : VK_NULL_HANDLE;
+    }
+
+    public synchronized long incrementAndGetTimelineValue() {
+        if (!initialized) init();
+        return this.timelineSemaphore != null ? this.timelineSemaphore.getNextValue() : 0;
+    }
+
+    public synchronized void addWaitTimelineValue(long value) {
+        this.waitTimelineValues.add(value);
+    }
+
+    public synchronized boolean hasTimelineWaits() {
+        return !this.waitTimelineValues.isEmpty();
+    }
+
+    public synchronized long getMaxWaitTimelineValue() {
+        long max = 0;
+        for (int i = 0; i < this.waitTimelineValues.size(); i++) {
+            long val = this.waitTimelineValues.getLong(i);
+            if (val > max) max = val;
+        }
+        return max;
+    }
+
+    public synchronized void clearTimelineWaits() {
+        this.waitTimelineValues.clear();
+    }
+
+    public synchronized void clearFrame(int frameIndex) {
+        if (!initialized) init();
+        if (timelineSupported) {
+            deferredResets[frameIndex].forEach(CommandPool.CommandBuffer::reset);
+            deferredResets[frameIndex].clear();
+        }
     }
 
     public void addCommandBuffer(CommandPool.CommandBuffer commandBuffer) {
@@ -38,13 +105,19 @@ public class Synchronization {
     }
 
     public synchronized void addCommandBuffer(CommandPool.CommandBuffer commandBuffer, boolean useSemaphore) {
-        if (!useSemaphore) {
-            this.addFence(commandBuffer.getFence());
-            this.fenceCbs.add(commandBuffer);
-        }
-        else {
-            this.semaphores.add(commandBuffer.getSemaphore());
-            this.semaphoreCbs.add(commandBuffer);
+        if (!initialized) init();
+
+        if (timelineSupported) {
+            deferredResets[Renderer.getCurrentFrame()].add(commandBuffer);
+        } else {
+            if (!useSemaphore) {
+                this.addFence(commandBuffer.getFence());
+                this.fenceCbs.add(commandBuffer);
+            }
+            else {
+                this.semaphores.add(commandBuffer.getSemaphore());
+                this.semaphoreCbs.add(commandBuffer);
+            }
         }
     }
 
@@ -57,6 +130,18 @@ public class Synchronization {
     }
 
     public synchronized void waitFences() {
+        if (!initialized) init();
+
+        if (timelineSupported) {
+            long maxWaitValue = this.timelineSemaphore.getLastSignaledValue();
+            if (maxWaitValue > lastWaitValue) {
+                this.timelineSemaphore.cpuWait(maxWaitValue, VUtil.UINT64_MAX);
+                lastWaitValue = maxWaitValue;
+            }
+            idx = 0;
+            return;
+        }
+
         if (idx == 0)
             return;
 
@@ -88,6 +173,8 @@ public class Synchronization {
     }
 
     public void scheduleCbReset() {
+        if (timelineSupported) return;
+        
         final var frameSemaphoreCbs = this.semaphoreCbs.clone();
         MemoryManager.getInstance().addFrameOp(
                 () -> {

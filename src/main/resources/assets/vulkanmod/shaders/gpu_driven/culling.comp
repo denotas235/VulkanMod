@@ -1,0 +1,79 @@
+#version 460
+#extension GL_EXT_buffer_reference : require
+#extension GL_KHR_shader_subgroup_ballot : require
+
+layout(local_size_x = 64) in;
+
+struct VkDrawIndexedIndirectCommand {
+    uint indexCount;
+    uint instanceCount;
+    uint firstIndex;
+    int  vertexOffset;
+    uint firstInstance;
+};
+
+struct ChunkAABB {
+    vec3 min;
+    vec3 max;
+};
+
+struct ChunkMeshInfo {
+    uint indexCount;
+    uint firstIndex;
+    int  vertexOffset;
+    uint baseInstance; // Pad to 16 bytes to match DrawParametersBuffer.STRIDE
+};
+
+layout(buffer_reference, std430) readonly buffer AABBBuffer {
+    ChunkAABB bounds[];
+};
+
+layout(buffer_reference, std430) readonly buffer MeshInfoBuffer {
+    ChunkMeshInfo infos[];
+};
+
+layout(buffer_reference, std430) writeonly buffer IndirectCmdBuffer {
+    VkDrawIndexedIndirectCommand drawCmds[];
+};
+
+layout(buffer_reference, std430) buffer DrawCountBuffer {
+    uint count;
+};
+
+layout(push_constant) uniform PushConstants {
+    AABBBuffer        aabbPtr;
+    MeshInfoBuffer    meshInfoPtr;
+    IndirectCmdBuffer indirectPtr;
+    DrawCountBuffer   countPtr;
+    uint              totalChunks;
+    vec4              frustumPlanes[6];
+} pc;
+
+bool frustumCull(ChunkAABB aabb) {
+    for (int i = 0; i < 6; ++i) {
+        vec3 p = mix(aabb.min, aabb.max, greaterThan(pc.frustumPlanes[i].xyz, vec3(0.0)));
+        if (dot(pc.frustumPlanes[i].xyz, p) + pc.frustumPlanes[i].w < 0.0) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void main() {
+    uint chunkId = gl_GlobalInvocationID.x;
+    if (chunkId >= pc.totalChunks) return;
+
+    // We index into QuadFacing.UNDEFINED (index 6 out of 7 facings)
+    uint infoIdx = chunkId * 7 + 6;
+
+    // Check if the chunk has valid geometry (indexCount > 0) before culling
+    if (pc.meshInfoPtr.infos[infoIdx].indexCount > 0 && frustumCull(pc.aabbPtr.bounds[chunkId])) {
+        uint drawIdx = atomicAdd(pc.countPtr.count, 1);
+
+        pc.indirectPtr.drawCmds[drawIdx].indexCount    = pc.meshInfoPtr.infos[infoIdx].indexCount;
+        pc.indirectPtr.drawCmds[drawIdx].instanceCount = 1;
+        pc.indirectPtr.drawCmds[drawIdx].firstIndex    = pc.meshInfoPtr.infos[infoIdx].firstIndex;
+        pc.indirectPtr.drawCmds[drawIdx].vertexOffset  = pc.meshInfoPtr.infos[infoIdx].vertexOffset;
+        pc.indirectPtr.drawCmds[drawIdx].firstInstance = chunkId;
+    }
+}

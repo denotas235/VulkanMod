@@ -12,6 +12,9 @@ import org.lwjgl.vulkan.*;
 import java.nio.IntBuffer;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.HashSet;
+import net.vulkanmod.vulkan.VulkanConfig;
 
 import static java.util.stream.Collectors.toSet;
 import static net.vulkanmod.vulkan.queue.Queue.findQueueFamilies;
@@ -184,6 +187,13 @@ public abstract class DeviceManager {
                 VRenderSystem.canSetLineWidth = true;
             }
 
+            // Query and merge supported device extensions
+            Set<String> enabledExtensions = new HashSet<>(Vulkan.REQUIRED_EXTENSION);
+            enabledExtensions.addAll(VulkanConfig.getSupportedDeviceExtensions(physicalDevice));
+
+            // Build features chain (pNext)
+            long configChain = VulkanConfig.buildFeatureChain(physicalDevice, stack, enabledExtensions);
+
             VkDeviceCreateInfo createInfo = VkDeviceCreateInfo.calloc(stack);
             createInfo.sType$Default();
             createInfo.sType(VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO);
@@ -197,19 +207,18 @@ public abstract class DeviceManager {
                 dynamicRenderingFeaturesKHR.dynamicRendering(true);
 
                 deviceVulkan11Features.pNext(dynamicRenderingFeaturesKHR.address());
-
-//                //Vulkan 1.3 dynamic rendering
-//                VkPhysicalDeviceVulkan13Features deviceVulkan13Features = VkPhysicalDeviceVulkan13Features.calloc(stack);
-//                deviceVulkan13Features.sType$Default();
-//                if(!deviceInfo.availableFeatures13.dynamicRendering())
-//                    throw new RuntimeException("Device does not support dynamic rendering feature.");
-//
-//                deviceVulkan13Features.dynamicRendering(true);
-//                createInfo.pNext(deviceVulkan13Features);
-//                deviceVulkan13Features.pNext(deviceVulkan11Features.address());
+                dynamicRenderingFeaturesKHR.pNext(configChain);
+            } else {
+                deviceVulkan11Features.pNext(configChain);
             }
 
-            createInfo.ppEnabledExtensionNames(asPointerBuffer(Vulkan.REQUIRED_EXTENSION));
+            // Build the extension pointer buffer
+            PointerBuffer extBuffer = stack.mallocPointer(enabledExtensions.size());
+            for (String ext : enabledExtensions) {
+                extBuffer.put(stack.UTF8(ext));
+            }
+            extBuffer.rewind();
+            createInfo.ppEnabledExtensionNames(extBuffer);
 
 //            Configuration.DEBUG_FUNCTIONS.set(true);
 

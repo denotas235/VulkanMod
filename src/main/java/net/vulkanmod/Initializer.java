@@ -35,6 +35,8 @@ public class Initializer implements ClientModInitializer {
 		CONFIG = loadConfig(configPath);
 		Platform.init();
 
+		net.vulkanmod.texture.astc.AstcTextureManager.getInstance().initialize();
+
 		Renderer.register(VulkanModRenderer.INSTANCE);
 
 		UpdateChecker.checkForUpdates();

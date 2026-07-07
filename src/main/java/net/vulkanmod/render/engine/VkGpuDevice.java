@@ -94,6 +94,23 @@ public class VkGpuDevice implements GpuDevice {
             }
 
             int format = VkGpuTexture.vkFormat(textureFormat);
+            
+            // ASTC Format override
+            if (string != null) {
+                String normPath = string;
+                if (normPath.contains(":")) {
+                    normPath = normPath.substring(normPath.indexOf(":") + 1);
+                }
+                if (net.vulkanmod.texture.astc.AstcTextureManager.getInstance().hasAstcVersion(normPath)) {
+                    net.vulkanmod.texture.astc.AstcTextureLoader.AstcTextureData astcData = net.vulkanmod.texture.astc.AstcTextureManager.getInstance().loadTexture(normPath);
+                    if (astcData != null) {
+                        format = astcData.vkFormat;
+                        width = astcData.width;
+                        height = astcData.height;
+                    }
+                }
+            }
+            
             int viewType = VkGpuTexture.vkImageViewType(usage);
             boolean depthFormat = VulkanImage.isDepthFormat(format);
             int attachmentUsage = depthFormat ? VK10.VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT : VK10.VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;

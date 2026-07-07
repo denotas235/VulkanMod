@@ -163,8 +163,22 @@ public class CommandPool {
             submitInfo.sType(VK_STRUCTURE_TYPE_SUBMIT_INFO);
             submitInfo.pCommandBuffers(stack.pointers(this.handle));
 
-            if (useSemaphore) {
-                submitInfo.pSignalSemaphores(stack.longs(this.semaphore));
+            if (net.vulkanmod.vulkan.Synchronization.INSTANCE.isTimelineSupported()) {
+                long timelineSemaphore = net.vulkanmod.vulkan.Synchronization.INSTANCE.getTimelineSemaphore();
+                long signalValue = net.vulkanmod.vulkan.Synchronization.INSTANCE.incrementAndGetTimelineValue();
+
+                VkTimelineSemaphoreSubmitInfo timelineSubmitInfo = VkTimelineSemaphoreSubmitInfo.calloc(stack)
+                    .sType(org.lwjgl.vulkan.KHRTimelineSemaphore.VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO_KHR)
+                    .pSignalSemaphoreValues(stack.longs(signalValue));
+
+                submitInfo.pNext(timelineSubmitInfo.address());
+                submitInfo.pSignalSemaphores(stack.longs(timelineSemaphore));
+
+                net.vulkanmod.vulkan.Synchronization.INSTANCE.addWaitTimelineValue(signalValue);
+            } else {
+                if (useSemaphore) {
+                    submitInfo.pSignalSemaphores(stack.longs(this.semaphore));
+                }
             }
 
             vkQueueSubmit(queue, submitInfo, fence);

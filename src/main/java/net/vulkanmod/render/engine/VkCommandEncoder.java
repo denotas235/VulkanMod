@@ -410,8 +410,41 @@ public class VkCommandEncoder implements CommandEncoder {
         }
     }
 
+    public void uploadAstcTexture(GpuTexture gpuTexture, ByteBuffer astcData, int astcBlockSize, int level, int arrayLayer) {
+        if (this.inRenderPass) {
+            throw new IllegalStateException("Close the existing render pass before performing additional commands");
+        }
+        
+        if (gpuTexture.isClosed()) {
+            throw new IllegalStateException("Destination texture is closed");
+        }
+        
+        VkGpuTexture vkGpuTexture = (VkGpuTexture) gpuTexture;
+        net.vulkanmod.vulkan.texture.VulkanImage vulkanImage = vkGpuTexture.getVulkanImage();
+        
+        if (vulkanImage == null) {
+            throw new IllegalStateException("VulkanImage is null");
+        }
+        
+        vulkanImage.uploadAstcCompressed(astcData, astcBlockSize, level, arrayLayer);
+    }
+
     @Override
     public void writeToTexture(GpuTexture gpuTexture, NativeImage nativeImage) {
+        if (gpuTexture instanceof VkGpuTexture vkGpuTexture) {
+            net.vulkanmod.vulkan.texture.VulkanImage vulkanImage = vkGpuTexture.getVulkanImage();
+            if (vulkanImage != null && vulkanImage.name != null) {
+                String normPath = vulkanImage.name;
+                if (normPath.contains(":")) {
+                    normPath = normPath.substring(normPath.indexOf(":") + 1);
+                }
+                if (net.vulkanmod.texture.astc.AstcTextureManager.getInstance().hasAstcVersion(normPath)) {
+                    this.writeToTexture(gpuTexture, nativeImage, 0, 0, 0, 0, nativeImage.getWidth(), nativeImage.getHeight(), 0, 0);
+                    return;
+                }
+            }
+        }
+
         int i = gpuTexture.getWidth(0);
         int j = gpuTexture.getHeight(0);
         if (nativeImage.getWidth() != i || nativeImage.getHeight() != j) {
@@ -427,6 +460,23 @@ public class VkCommandEncoder implements CommandEncoder {
 
     @Override
     public void writeToTexture(GpuTexture gpuTexture, NativeImage nativeImage, int level, int arrayLayer, int xOffset, int yOffset, int width, int height, int unpackSkipPixels, int unpackSkipRows) {
+        if (gpuTexture instanceof VkGpuTexture vkGpuTexture) {
+            net.vulkanmod.vulkan.texture.VulkanImage vulkanImage = vkGpuTexture.getVulkanImage();
+            if (vulkanImage != null && vulkanImage.name != null) {
+                String normPath = vulkanImage.name;
+                if (normPath.contains(":")) {
+                    normPath = normPath.substring(normPath.indexOf(":") + 1);
+                }
+                if (net.vulkanmod.texture.astc.AstcTextureManager.getInstance().hasAstcVersion(normPath)) {
+                    net.vulkanmod.texture.astc.AstcTextureLoader.AstcTextureData astcData = net.vulkanmod.texture.astc.AstcTextureManager.getInstance().loadTexture(normPath);
+                    if (astcData != null) {
+                        this.uploadAstcTexture(gpuTexture, astcData.astcData, astcData.blockSize, level, arrayLayer);
+                        return;
+                    }
+                }
+            }
+        }
+
         if (this.inRenderPass) {
             throw new IllegalStateException("Close the existing render pass before performing additional commands");
         } else if (level >= 0 && level < gpuTexture.getMipLevels()) {

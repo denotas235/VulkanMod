@@ -362,23 +362,28 @@ public class Vulkan {
     }
 
     private static PointerBuffer getRequiredInstanceExtensions() {
-
         PointerBuffer glfwExtensions = glfwGetRequiredInstanceExtensions();
-
-        if (ENABLE_VALIDATION_LAYERS) {
-
-            MemoryStack stack = stackGet();
-
-            PointerBuffer extensions = stack.mallocPointer(glfwExtensions.capacity() + 1);
-
-            extensions.put(glfwExtensions);
-            extensions.put(stack.UTF8(VK_EXT_DEBUG_UTILS_EXTENSION_NAME));
-
-            // Rewind the buffer before returning it to reset its position back to 0
-            return extensions.rewind();
+        Set<String> supported = VulkanConfig.getSupportedInstanceExtensions(glfwExtensions);
+        
+        // Android requer VK_KHR_android_surface explicitamente
+        // glfwGetRequiredInstanceExtensions() retorna NULL no Android
+        if (glfwExtensions == null) {
+            // Gadgets Android: adicionar extensões de superfície manualmente
+            supported.add("VK_KHR_surface");
+            supported.add("VK_KHR_android_surface");
+            Initializer.LOGGER.info("[Vulkan] Android platform: adding VK_KHR_surface and VK_KHR_android_surface");
         }
 
-        return glfwExtensions;
+        if (ENABLE_VALIDATION_LAYERS) {
+            supported.add(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+        }
+
+        MemoryStack stack = stackGet();
+        PointerBuffer extensions = stack.mallocPointer(supported.size());
+        for (String ext : supported) {
+            extensions.put(stack.UTF8(ext));
+        }
+        return extensions.rewind();
     }
 
     public static void checkResult(int result, String errorMessage) {

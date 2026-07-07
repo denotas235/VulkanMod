@@ -30,6 +30,7 @@ public class Device {
 
     public final VkPhysicalDeviceFeatures2 availableFeatures;
     public final VkPhysicalDeviceShaderDrawParametersFeatures availableFeatures11;
+    public final boolean timelineSemaphoreSupported;
 
 //    public final VkPhysicalDeviceVulkan13Features availableFeatures13;
 //    public final boolean vulkan13Support;
@@ -51,9 +52,13 @@ public class Device {
         this.availableFeatures = VkPhysicalDeviceFeatures2.calloc();
         this.availableFeatures.sType$Default();
 
-        this.availableFeatures11 = VkPhysicalDeviceShaderDrawParametersFeatures.malloc();
+        this.availableFeatures11 = VkPhysicalDeviceShaderDrawParametersFeatures.calloc();
         this.availableFeatures11.sType$Default();
         this.availableFeatures.pNext(this.availableFeatures11);
+
+        VkPhysicalDeviceTimelineSemaphoreFeatures timelineFeatures = VkPhysicalDeviceTimelineSemaphoreFeatures.calloc();
+        timelineFeatures.sType$Default();
+        this.availableFeatures11.pNext(timelineFeatures.address());
 
         //Vulkan 1.3
 //        this.availableFeatures13 = VkPhysicalDeviceVulkan13Features.malloc();
@@ -63,6 +68,8 @@ public class Device {
 //        this.vulkan13Support = this.device.getCapabilities().apiVersion == VK_API_VERSION_1_3;
 
         vkGetPhysicalDeviceFeatures2(this.physicalDevice, this.availableFeatures);
+
+        this.timelineSemaphoreSupported = timelineFeatures.timelineSemaphore();
 
         if (this.availableFeatures.features().multiDrawIndirect() && this.availableFeatures11.shaderDrawParameters())
             this.drawIndirectSupported = true;

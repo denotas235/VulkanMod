@@ -322,5 +322,9 @@ public class SectionGraph {
 
         return String.format("Chunks: %d(%d)/%d D: %d, %s", this.nonEmptyChunks, sections, totalSections, renderDistance, tasksInfo);
     }
+
+    public int getNonEmptyChunks() {
+        return this.nonEmptyChunks;
+    }
 }
 

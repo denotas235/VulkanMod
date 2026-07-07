@@ -265,6 +265,43 @@ public class VulkanImage {
         transitionImageLayout(stack, commandBuffer, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
     }
 
+    public void uploadAstcCompressed(ByteBuffer astcData, int astcBlockSize, int mipLevel, int arrayLayer) {
+        int blocksX = (width + astcBlockSize - 1) / astcBlockSize;
+        int blocksY = (height + astcBlockSize - 1) / astcBlockSize;
+        int expectedBlocks = blocksX * blocksY;
+        int astcSize = expectedBlocks * 16;
+        
+        if (astcData.remaining() < astcSize) {
+            throw new IllegalArgumentException(
+                "ASTC data size mismatch: expected " + astcSize + " bytes (" + 
+                expectedBlocks + " blocks * 16), got " + astcData.remaining()
+            );
+        }
+        
+        StagingBuffer stagingBuffer = Vulkan.getStagingBuffer();
+        
+        if (astcSize > stagingBuffer.getBufferSize()) {
+            stagingBuffer = new StagingBuffer(astcSize);
+            stagingBuffer.scheduleFree();
+        }
+        
+        stagingBuffer.align(16);
+        stagingBuffer.copyBuffer(astcSize, MemoryUtil.memAddress(astcData));
+        
+        long bufferId = stagingBuffer.getId();
+        
+        VkCommandBuffer commandBuffer = ImageUploadHelper.INSTANCE.getOrStartCommandBuffer().getHandle();
+        try (MemoryStack stack = stackPush()) {
+            transferDstLayout(stack, commandBuffer);
+            
+            ImageUtil.copyBufferToImageCmd(stack, commandBuffer, bufferId, this.id,
+                                           arrayLayer, mipLevel, width, height, 0, 0,
+                                           (int) stagingBuffer.getOffset(), 0, 0);
+            
+            ImageUtil.imageTransferMemoryBarrier(stack, commandBuffer, this, mipLevel);
+        }
+    }
+
     public void readOnlyLayout() {
         if (this.currentLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
             return;
@@ -564,6 +601,9 @@ public class VulkanImage {
                 case VK_FORMAT_R16_SFLOAT -> 2;
                 case VK_FORMAT_R8_UNORM -> 1;
                 case VK_FORMAT_R16G16B16A16_SFLOAT -> 8;
+
+                // ASTC Formats (VK_FORMAT_ASTC_4x4_UNORM_BLOCK through VK_FORMAT_ASTC_12x12_SRGB_BLOCK)
+                case 0x93B0, 0x93B1, 0x93B2, 0x93B3, 0x93B4, 0x93B5, 0x93B6, 0x93B7, 0x93B8, 0x93B9, 0x93BA, 0x93BB -> 1;
 
                 default -> throw new IllegalArgumentException(String.format("Unxepcted format: %s", format));
             };

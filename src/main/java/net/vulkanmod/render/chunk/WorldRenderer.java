@@ -97,6 +97,8 @@ public class WorldRenderer {
     private float lastCamRotX;
     private float lastCamRotY;
 
+    private final VulkanChunkPipeline gpuCullingPipeline = new VulkanChunkPipeline();
+
     private SectionGrid sectionGrid;
 
     private SectionGraph sectionGraph;
@@ -327,6 +329,16 @@ public class WorldRenderer {
         final boolean isTranslucent = renderType == TerrainRenderType.TRANSLUCENT;
         final boolean indirectDraw = Initializer.CONFIG.indirectDraw;
 
+        float[] frustumPlanes = null;
+        if (indirectDraw) {
+            PipelineManager.initCullingPipeline();
+            if (PipelineManager.cullingPipeline != null) {
+                Matrix4f mvp = new Matrix4f(projection).mul(modelView);
+                frustumPlanes = new float[24];
+                VulkanChunkPipeline.extractFrustumPlanes(mvp, frustumPlanes);
+            }
+        }
+
         if (!isTranslucent) {
             GlStateManager._disableBlend();
         } else {
@@ -402,7 +414,38 @@ public class WorldRenderer {
                     renderer.uploadAndBindUBOs(pipeline);
 
                     if (indirectDraw) {
-                        drawBuffers.buildDrawBatchesIndirect(cameraPos, indirectBuffers[currentFrame], queue, renderType);
+                        if (PipelineManager.cullingPipeline != null) {
+                            long aabbPtr = VulkanChunkPipeline.getBufferDeviceAddress(drawBuffers.aabbBuffer.getId());
+                            long renderTypeOffset = (long) renderType.ordinal() * ChunkAreaManager.AREA_SIZE * net.vulkanmod.render.chunk.cull.QuadFacing.COUNT * net.vulkanmod.render.chunk.buffer.DrawParametersBuffer.STRIDE;
+                            long meshInfoPtr = VulkanChunkPipeline.getBufferDeviceAddress(drawBuffers.meshInfoBuffer.getId()) + renderTypeOffset;
+                            long indirectPtr = VulkanChunkPipeline.getBufferDeviceAddress(indirectBuffers[currentFrame].getId());
+                            
+                            long drawCountBufferOffset = currentFrame * 4L;
+                            long countPtr = VulkanChunkPipeline.getBufferDeviceAddress(drawBuffers.drawCountBuffer.getId()) + drawCountBufferOffset;
+                            
+                            int totalChunks = ChunkAreaManager.AREA_SIZE;
+                            
+                            long graphicsPipelineHandle = pipeline.getHandle(net.vulkanmod.vulkan.shader.PipelineState.getCurrentPipelineState(Renderer.getInstance().getBoundRenderPass()));
+                            
+                            this.gpuCullingPipeline.recordRenderCommands(
+                                Renderer.getCommandBuffer(),
+                                PipelineManager.cullingPipeline.getLayout(),
+                                PipelineManager.cullingPipeline.getId(),
+                                graphicsPipelineHandle,
+                                indirectBuffers[currentFrame].getId(),
+                                0L,
+                                drawBuffers.drawCountBuffer.getId(),
+                                drawCountBufferOffset,
+                                aabbPtr,
+                                meshInfoPtr,
+                                indirectPtr,
+                                countPtr,
+                                totalChunks,
+                                frustumPlanes
+                            );
+                        } else {
+                            drawBuffers.buildDrawBatchesIndirect(cameraPos, indirectBuffers[currentFrame], queue, renderType);
+                        }
                     }
                     else {
                         drawBuffers.buildDrawBatchesDirect(cameraPos, queue, renderType);
@@ -530,6 +573,7 @@ public class WorldRenderer {
     }
 
     public int getVisibleSectionsCount() {
+        if (this.sectionGraph == null) return 0;
         return this.sectionGraph.getSectionQueue().size();
     }
 
@@ -567,6 +611,11 @@ public class WorldRenderer {
         }
 
         return this.sectionGraph.getStatistics();
+    }
+
+    public int getNonEmptyChunks() {
+        if (this.sectionGraph == null) return 0;
+        return this.sectionGraph.getNonEmptyChunks();
     }
 
     public void cleanUp() {

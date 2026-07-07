@@ -187,7 +187,7 @@ public class TaskDispatcher {
     }
 
     public boolean isIdle() {
-        return this.idleThreads == this.threads.length && this.compileResults.isEmpty();
+        return this.threads == null || (this.idleThreads == this.threads.length && this.compileResults.isEmpty());
     }
 
     public void clearBatchQueue() {
