@@ -1,5 +1,45 @@
 # Changelog - VulkanMod v0.6.7-dev
 
+## [v0.1.3-fix-android-crash] - 2026-07-07
+
+### 🐛 Fixed
+- **CRASH SIGSEGV na inicialização em Android/Mali-G52**
+  - glfwGetRequiredInstanceExtensions() retorna NULL no Android
+  - Adicionado VK_KHR_surface e VK_KHR_android_surface manualmente ao buffer de extensões
+  - Corrige crash durante vkCreateInstance que ocorria na v0.1.2
+
+### 🔧 Changed
+- **Vulkan.java:** getRequiredInstanceExtensions() agora detecta plataforma Android
+  - Se glfwExtensions == NULL (Android), adiciona extensões de superfície manualmente
+  - Log informativo: "[Vulkan] Android platform: adding VK_KHR_surface and VK_KHR_android_surface"
+
+### 📊 Root Cause Analysis
+
+**v0.1.1 (estável):**
+- Retornava glfwExtensions diretamente (NULL no Android)
+- GLFW resolvia extensões internamente
+
+**v0.1.2 (crash):**
+- Sempre criava buffer com VulkanConfig.getSupportedInstanceExtensions()
+- NÃO incluía VK_KHR_android_surface
+- vkCreateInstance falhava → SIGSEGV
+
+**v0.1.3 (fix):**
+- Detecta glfwExtensions == NULL (Android)
+- Adiciona manualmente VK_KHR_surface + VK_KHR_android_surface
+- Mantém compatibilidade com outras plataformas
+
+### 📱 Dispositivos Suportados
+- TECNO KH7 (Mali-G52 MC2, Android 12)
+- Zalith Launcher 2.4.8-debug / FCL
+- Minecraft 1.21.11 Fabric 0.19.3
+
+### 🔗 Links
+- **Branch:** vulkan-1.1-compat
+- **Commit:** f48033c
+
+---
+
 ## [v0.6.7-vulkan1.1] - 2026-06-30
 
 ### ✨ Added
